@@ -1,0 +1,5 @@
+CPU Mode Requirements
+
+Install using: pip install -r requirements.txt
+
+torch pyzipper numpy
