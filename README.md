@@ -1,8 +1,9 @@
-# 🚀 Pabasara's Ultimate GPU ZIP Cracker
+# 🚀 Ultimate GPU ZIP Cracker
 
 > Powered by RTX ⚡ + PyTorch CUDA\
 > High-performance ZIP password brute-force tool with CPU, GPU, and
 > Hybrid modes.
+> You can check by creating a zip file with a password
 
 ------------------------------------------------------------------------
 
