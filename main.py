@@ -1,0 +1,530 @@
+import torch
+import pyzipper
+import string
+import time
+import itertools
+from concurrent.futures import ThreadPoolExecutor
+import numpy as np
+import os
+import tkinter as tk
+from tkinter import filedialog
+import sys
+
+# ============================================================================
+#                    𝖯𝖠𝖡𝖠𝖲𝖠𝖱𝖠'𝖲 𝖴𝖫𝖳𝖨𝖬𝖠𝖳𝖤 𝖦𝖯𝖴 𝖹𝖨𝖯 𝖢𝖱𝖠𝖢𝖪𝖤𝖱
+#                         𝖯𝗈𝗐𝖾𝗋𝖾𝖽 𝖻𝗒 𝖱𝖳𝖷 
+# ============================================================================
+
+class RTX3050Cracker:
+    def __init__(self):
+        self.has_cuda = torch.cuda.is_available()
+        if self.has_cuda:
+            self.device = torch.device('cuda')
+            print(f"╔══════════════════════════════════════════════╗")
+            print(f"║  🚀 𝖦𝖯𝖴 𝖣𝖾𝗍𝖾𝖼𝗍𝖾𝖽: {torch.cuda.get_device_name(0):<20} ║")
+            print(f"║  🎯 𝖵𝖱𝖠𝖬: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}𝖦𝖡{' ':<34}║")
+            print(f"║  🔥 𝖡𝖺𝗍𝖼𝗁 𝖲𝗂𝗓𝖾: 𝟣𝟢𝟢,𝟢𝟢𝟢{' ':<29}║")
+            print(f"╚══════════════════════════════════════════════╝")
+            self.batch_size = 100000
+        else:
+            self.device = torch.device('cpu')
+            print(f"╔══════════════════════════════════════════════╗")
+            print(f"║  ❌ 𝖢𝖴𝖣𝖠 𝖭𝗈𝗍 𝖠𝗏𝖺𝗂𝗅𝖺𝖻𝗅𝖾{' ':<34}║")
+            print(f"║  💻 𝖴𝗌𝗂𝗇𝗀 𝖢𝖯𝖴 𝖬𝗈𝖽𝖾{' ':<37}║")
+            print(f"╚══════════════════════════════════════════════╝")
+            self.batch_size = 50000
+
+    def generate_passwords_gpu(self, chars, length, start_idx, batch_size):
+        """GPU password generation"""
+        if not self.has_cuda:
+            return self._generate_passwords_cpu(chars, length, start_idx, batch_size)
+            
+        chars_tensor = torch.tensor([ord(c) for c in chars], device=self.device, dtype=torch.int16)
+        total_chars = len(chars)
+        
+        indices = torch.arange(start_idx, start_idx + batch_size, device=self.device)
+        
+        password_indices = []
+        for pos in range(length):
+            digit = indices % total_chars
+            indices = indices // total_chars
+            password_indices.append(digit)
+        
+        password_indices.reverse()
+        password_tensor = torch.stack(password_indices, dim=1)
+        password_chars = chars_tensor[password_tensor]
+        
+        passwords = []
+        for i in range(min(batch_size, password_chars.shape[0])):
+            pwd = ''.join(chr(c) for c in password_chars[i].cpu().numpy())
+            passwords.append(pwd)
+        
+        return passwords
+
+    def _generate_passwords_cpu(self, chars, length, start_idx, batch_size):
+        """CPU password generation"""
+        passwords = []
+        for i in range(batch_size):
+            idx = start_idx + i
+            password = []
+            temp = idx
+            for _ in range(length):
+                password.append(chars[temp % len(chars)])
+                temp //= len(chars)
+            passwords.append(''.join(reversed(password)))
+        return passwords
+
+def select_zip_file():
+    """Open native Windows file picker"""
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    
+    file_path = filedialog.askopenfilename(
+        title="🔐 𝖯𝖺𝖻𝖺𝗌𝖺𝗋𝖺'𝗌 𝖢𝗋𝖺𝖼𝗄𝖾𝗋 - 𝖲𝖾𝗅𝖾𝖼𝗍 𝖹𝖨𝖯 𝖥𝗂𝗅𝖾",
+        filetypes=[
+            ("ZIP files", "*.zip"),
+            ("All files", "*.*")
+        ],
+        initialdir=os.path.expanduser("~/Desktop")  # Start at Desktop
+    )
+    
+    root.destroy()
+    return file_path
+
+# 𝖱𝖾𝗉𝗅𝖺𝖼𝖾 𝗒𝗈𝗎𝗋 𝗀𝖾𝗍_𝖿𝗂𝗅𝖾_𝗉𝖺𝗍𝗁() 𝗐𝗂𝗍𝗁 𝗍𝗁𝗂𝗌:
+def get_file_path():
+    """Simple file path input with explorer option"""
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  📁 𝖥𝖨𝖫𝖤 𝖲𝖤𝖫𝖤𝖢𝖳𝖨𝖮𝖭{' ':<27}║")
+    print(f"╚══════════════════════════════════════════════╝")
+    print(f"  [𝟣] 𝖮𝗉𝖾𝗇 𝖥𝗂𝗅𝖾 𝖤𝗑𝗉𝗅𝗈𝗋𝖾𝗋")
+    print(f"  [𝟤] 𝖬𝖺𝗇𝗎𝖺𝗅𝗅𝗒 𝖾𝗇𝗍𝖾𝗋 𝗉𝖺𝗍𝗁")
+    
+    choice = input("\n  🎯 𝖢𝗁𝗈𝗈𝗌𝖾 (𝟣 𝗈𝗋 𝟤): ").strip()
+    
+    if choice == "1":
+        file_path = select_zip_file()
+        if not file_path:
+            print("  ❌ 𝖭𝗈 𝖿𝗂𝗅𝖾 𝗌𝖾𝗅𝖾𝖼𝗍𝖾𝖽")
+            return None
+    else:
+        file_path = input("  📂 𝖤𝗇𝗍𝖾𝗋 𝗉𝖺𝗍𝗁: ").strip().strip('"')
+    
+    # 𝖵𝖺𝗅𝗂𝖽𝖺𝗍𝗂𝗈𝗇 (𝗄𝖾𝖾𝗉 𝗒𝗈𝗎𝗋 𝖾𝗑𝗂𝗌𝗍𝗂𝗇𝗀 𝗏𝖺𝗅𝗂𝖽𝖺𝗍𝗂𝗈𝗇 𝖼𝗈𝖽𝖾)
+    if not os.path.exists(file_path):
+        print("  ❌ 𝖥𝗂𝗅𝖾 𝖽𝗈𝖾𝗌 𝗇𝗈𝗍 𝖾𝗑𝗂𝗌𝗍")
+        return None
+    
+    if not file_path.lower().endswith('.zip'):
+        print("  ❌ 𝖭𝗈𝗍 𝖺 .𝗓𝗂𝗉 𝖿𝗂𝗅𝖾")
+        return None
+    
+    try:
+        with pyzipper.AESZipFile(file_path) as test:
+            if not test.namelist():
+                print("  ❌ 𝖹𝖨𝖯 𝖿𝗂𝗅𝖾 𝗂𝗌 𝖾𝗆𝗉𝗍𝗒")
+                return None
+        print(f"  ✅ 𝖫𝗈𝖺𝖽𝖾𝖽: {os.path.basename(file_path)}")
+        return file_path
+    except Exception as e:
+        print(f"  ❌ 𝖢𝖺𝗇𝗇𝗈𝗍 𝗈𝗉𝖾𝗇: {e}")
+        return None
+def get_cracking_params():
+    """Get user preferences"""
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  🔐 𝖯𝖠𝖡𝖠𝖲𝖠𝖱𝖠'𝖲 𝖹𝖨𝖯 𝖢𝖱𝖠𝖢𝖪𝖤𝖱{' ':<19}║")
+    print(f"╚══════════════════════════════════════════════╝")
+    
+    file_path = get_file_path()
+    if not file_path:
+        return None, None, None
+
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  🔢 𝖯𝖠𝖲𝖲𝖶𝖮𝖱𝖣 𝖫𝖤𝖭𝖦𝖳𝖧{' ':<26}║")
+    print(f"╚══════════════════════════════════════════════╝")
+    
+    # Password length
+    while True:
+        try:
+            length = int(input("  📏 𝖤𝗇𝗍𝖾𝗋 𝗉𝖺𝗌𝗌𝗐𝗈𝗋𝖽 𝗅𝖾𝗇𝗀𝗍𝗁 (𝟣-𝟪 𝗋𝖾𝖼𝗈𝗆𝗆𝖾𝗇𝖽𝖾𝖽): "))
+            if 1 <= length <= 12:
+                break
+            print("  ❌ 𝖯𝗅𝖾𝖺𝗌𝖾 𝖾𝗇𝗍𝖾𝗋 𝖺 𝗇𝗎𝗆𝖻𝖾𝗋 𝖻𝖾𝗍𝗐𝖾𝖾𝗇 𝟣 𝖺𝗇𝖽 𝟣𝟤")
+        except:
+            print("  ❌ 𝖯𝗅𝖾𝖺𝗌𝖾 𝖾𝗇𝗍𝖾𝗋 𝖺 𝗏𝖺𝗅𝗂𝖽 𝗇𝗎𝗆𝖻𝖾𝗋")
+
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  🔤 𝖢𝖧𝖠𝖱𝖠𝖢𝖳𝖤𝖱 𝖲𝖤𝖳{' ':<28}║")
+    print(f"╚══════════════════════════════════════════════╝")
+    
+    # Character set
+    print(f"  ╔════════════════════════════════════════╗")
+    print(f"  ║ 𝟣. 𝖫𝗈𝗐𝖾𝗋𝖼𝖺𝗌𝖾 (𝖺-𝗓)                     ║")
+    print(f"  ║ 𝟤. 𝖴𝗉𝗉𝖾𝗋𝖼𝖺𝗌𝖾 (𝖠-𝖹)                     ║")
+    print(f"  ║ 𝟥. 𝖡𝗈𝗍𝗁 𝖼𝖺𝗌𝖾𝗌 (𝖺-𝖹)                    ║")
+    print(f"  ║ 𝟦. 𝖫𝖾𝗍𝗍𝖾𝗋𝗌 + 𝗇𝗎𝗆𝖻𝖾𝗋𝗌 (𝖺-𝗓𝟢-𝟫)          ║")
+    print(f"  ║ 𝟧. 𝖥𝗎𝗅𝗅 𝗌𝖾𝗍 (𝖺-𝖹𝟢-𝟫!@#$)               ║")
+    print(f"  ║ 𝟨. 𝖢𝗎𝗌𝗍𝗈𝗆                              ║")
+    print(f"  ╚════════════════════════════════════════╝")
+    
+    while True:
+        choice = input("  🎯 𝖢𝗁𝗈𝗈𝗌𝖾 𝖺𝗇 𝗈𝗉𝗍𝗂𝗈𝗇 (𝟣-𝟨): ").strip()
+        if choice in ['1','2','3','4','5','6']:
+            break
+        print("  ❌ 𝖨𝗇𝗏𝖺𝗅𝗂𝖽 𝖼𝗁𝗈𝗂𝖼𝖾")
+    
+    if choice == '1': chars = string.ascii_lowercase
+    elif choice == '2': chars = string.ascii_uppercase
+    elif choice == '3': chars = string.ascii_letters
+    elif choice == '4': chars = string.ascii_lowercase + string.digits
+    elif choice == '5': chars = string.ascii_letters + string.digits + "!@#$"
+    else: 
+        chars = input("  ✏️ 𝖤𝗇𝗍𝖾𝗋 𝖼𝗎𝗌𝗍𝗈𝗆 𝖼𝗁𝖺𝗋𝖺𝖼𝗍𝖾𝗋𝗌: ") 
+        if not chars:
+            chars = string.ascii_lowercase
+
+    return file_path, length, chars
+
+def calculate_stats(chars, length):
+    """Show password statistics"""
+    total = len(chars) ** length
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  📊 𝖯𝖠𝖲𝖲𝖶𝖮𝖱𝖣 𝖲𝖳𝖠𝖳𝖨𝖲𝖳𝖨𝖢𝖲{' ':<22}║")
+    print(f"╠══════════════════════════════════════════════╣")
+    print(f"║  • 𝖢𝗁𝖺𝗋𝖺𝖼𝗍𝖾𝗋 𝗌𝖾𝗍 𝗌𝗂𝗓𝖾: {len(chars):>9}{' ':<13}║")
+    print(f"║  • 𝖯𝖺𝗌𝗌𝗐𝗈𝗋𝖽 𝗅𝖾𝗇𝗀𝗍𝗁: {length:>11}{' ':<14}║")
+    print(f"║  • 𝖳𝗈𝗍𝖺𝗅 𝖼𝗈𝗆𝖻𝗂𝗇𝖺𝗍𝗂𝗈𝗇𝗌: {total:,}{' ':<15}║")
+    print(f"╚══════════════════════════════════════════════╝")
+    
+    # Realistic time estimates
+    if torch.cuda.is_available():
+        speed = 150000  # Realistic GPU speed
+    else:
+        speed = 8000    # Realistic CPU speed
+    
+    est_seconds = total / speed
+    
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  ⏱️ 𝖤𝖲𝖳𝖨𝖬𝖠𝖳𝖤𝖣 𝖳𝖨𝖬𝖤{' ':<27}║")
+    print(f"╠══════════════════════════════════════════════╣")
+    
+    if est_seconds < 60:
+        print(f"║  • {est_seconds:.1f} 𝗌𝖾𝖼𝗈𝗇𝖽𝗌{' ':<30}║")
+    elif est_seconds < 3600:
+        print(f"║  • {est_seconds/60:.1f} 𝗆𝗂𝗇𝗎𝗍𝖾𝗌{' ':<29}║")
+    else:
+        print(f"║  • {est_seconds/3600:.1f} 𝗁𝗈𝗎𝗋𝗌{' ':<29}║")
+    
+    print(f"║  • @ {speed:,} 𝗉𝗐𝖽/𝗌𝖾𝖼{' ':<27}║")
+    print(f"╚══════════════════════════════════════════════╝")
+
+def crack_cpu_only(file_path, length, chars):
+    """Pure CPU cracking with accurate speed reporting"""
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  💻 𝖢𝖯𝖴 𝖡𝖱𝖴𝖳𝖤 𝖥𝖮𝖱𝖢𝖤 𝖠𝖳𝖳𝖠𝖢𝖪{' ':<19}║")
+    print(f"╚══════════════════════════════════════════════╝")
+    
+    start_time = time.time()
+    attempts = 0
+    last_update = start_time
+    
+    with pyzipper.AESZipFile(file_path) as archive:
+        test_file = archive.namelist()[0]
+        
+        for pwd_tuple in itertools.product(chars, repeat=length):
+            password = ''.join(pwd_tuple)
+            attempts += 1
+            
+            try:
+                archive.read(test_file, pwd=password.encode())
+                elapsed = time.time() - start_time
+                print(f"\n╔══════════════════════════════════════════════╗")
+                print(f"║  ✅ 𝖲𝖴𝖢𝖢𝖤𝖲𝖲!{' ':<44}║")
+                print(f"╠══════════════════════════════════════════════╣")
+                print(f"║  🔑 𝖯𝖺𝗌𝗌𝗐𝗈𝗋𝖽: {password}{' ':<26}║")
+                print(f"║  🔢 𝖠𝗍𝗍𝖾𝗆𝗉𝗍𝗌: {attempts:,}{' ':<25}║")
+                print(f"║  ⏱️ 𝖳𝗂𝗆𝖾: {elapsed:.2f}𝗌{' ':<29}║")
+                print(f"║  ⚡ 𝖲𝗉𝖾𝖾𝖽: {attempts/elapsed:.0f} 𝗉𝗐𝖽/𝗌𝖾𝖼{' ':<22}║")
+                print(f"╚══════════════════════════════════════════════╝")
+                return password
+            except:
+                # Update progress every second
+                current_time = time.time()
+                if current_time - last_update >= 1.0:
+                    elapsed = current_time - start_time
+                    speed = attempts / elapsed
+                    progress_bar = '█' * int((attempts % 50) / 2) + '░' * (25 - int((attempts % 50) / 2))
+                    print(f"  🔍 [{progress_bar}] {attempts:,} 𝗍𝗋𝗂𝖾𝖽 | {speed:.0f}/𝗌", end='\r')
+                    last_update = current_time
+    
+    elapsed = time.time() - start_time
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  ❌ 𝖥𝖠𝖨𝖫𝖤𝖣{' ':<47}║")
+    print(f"╠══════════════════════════════════════════════╣")
+    print(f"║  🔢 𝖠𝗍𝗍𝖾𝗆𝗉𝗍𝗌: {attempts:,}{' ':<31}║")
+    print(f"║  ⏱️ 𝖳𝗂𝗆𝖾: {elapsed:.2f}𝗌{' ':<38}║")
+    print(f"║  ⚡ 𝖲𝗉𝖾𝖾𝖽: {attempts/elapsed:.0f} 𝗉𝗐𝖽/𝗌𝖾𝖼{' ':<24}║")
+    print(f"╚══════════════════════════════════════════════╝")
+    return None
+
+def crack_gpu_only(file_path, length, chars):
+    """Pure GPU cracking"""
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  🎯 𝖦𝖯𝖴 𝖡𝖱𝖴𝖳𝖤 𝖥𝖮𝖱𝖢𝖤 𝖠𝖳𝖳𝖠𝖢𝖪{' ':<18}║")
+    print(f"╚══════════════════════════════════════════════╝")
+    
+    cracker = RTX3050Cracker()
+    
+    if not cracker.has_cuda:
+        print("  ❌ 𝖢𝖴𝖣𝖠 𝗇𝗈𝗍 𝖺𝗏𝖺𝗂𝗅𝖺𝖻𝗅𝖾, 𝖿𝖺𝗅𝗅𝗂𝗇𝗀 𝖻𝖺𝖼𝗄 𝗍𝗈 𝖢𝖯𝖴")
+        return crack_cpu_only(file_path, length, chars)
+    
+    start_time = time.time()
+    total_attempts = 0
+    total_combinations = len(chars) ** length
+    last_update = start_time
+    
+    with pyzipper.AESZipFile(file_path) as archive:
+        test_file = archive.namelist()[0]
+        
+        for batch_start in range(0, total_combinations, cracker.batch_size):
+            batch_size = min(cracker.batch_size, total_combinations - batch_start)
+            passwords = cracker.generate_passwords_gpu(chars, length, batch_start, batch_size)
+            
+            for pwd in passwords:
+                total_attempts += 1
+                try:
+                    archive.read(test_file, pwd=pwd.encode())
+                    elapsed = time.time() - start_time
+                    print(f"\n╔══════════════════════════════════════════════╗")
+                    print(f"║  ✅ 𝖲𝖴𝖢𝖢𝖤𝖲𝖲!{' ':<33}║")
+                    print(f"╠══════════════════════════════════════════════╣")
+                    print(f"║  🔑 𝖯𝖺𝗌𝗌𝗐𝗈𝗋𝖽: {pwd}{' ':<27}║")
+                    print(f"║  🔢 𝖠𝗍𝗍𝖾𝗆𝗉𝗍𝗌: {total_attempts:,}{' ':<22}║")
+                    print(f"║  ⏱️ 𝖳𝗂𝗆𝖾: {elapsed:.2f}𝗌{' ':<29}║")
+                    print(f"║  ⚡ 𝖲𝗉𝖾𝖾𝖽: {total_attempts/elapsed:.0f} 𝗉𝗐𝖽/𝗌𝖾𝖼{' ':<22}║")
+                    print(f"╚══════════════════════════════════════════════╝")
+                    return pwd
+                except:
+                    pass
+            
+            # Progress reporting
+            current_time = time.time()
+            if current_time - last_update >= 1.0:
+                elapsed = current_time - start_time
+                speed = total_attempts / elapsed
+                progress = (batch_start + batch_size) / total_combinations * 100
+                vram_usage = torch.cuda.memory_allocated() / 1e6 if cracker.has_cuda else 0
+                
+                progress_bar = '█' * int(progress / 4) + '░' * (25 - int(progress / 4))
+                print(f"  🎯 [{progress_bar}] {progress:.1f}% | {total_attempts:,} | {speed:.0f}/𝗌 | 𝖵𝖱𝖠𝖬: {vram_usage:.0f}𝖬𝖡", end='\r')
+                last_update = current_time
+            
+            # Memory management
+            if cracker.has_cuda and batch_start % (cracker.batch_size * 5) == 0:
+                torch.cuda.empty_cache()
+    
+    elapsed = time.time() - start_time
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  ❌ 𝖥𝖠𝖨𝖫𝖤𝖣{' ':<47}║")
+    print(f"╠══════════════════════════════════════════════╣")
+    print(f"║  🔢 𝖠𝗍𝗍𝖾𝗆𝗉𝗍𝗌: {total_attempts:,}{' ':<28}║")
+    print(f"║  ⏱️ 𝖳𝗂𝗆𝖾: {elapsed:.2f}𝗌{' ':<38}║")
+    print(f"║  ⚡ 𝖲𝗉𝖾𝖾𝖽: {total_attempts/elapsed:.0f} 𝗉𝗐𝖽/𝗌𝖾𝖼{' ':<24}║")
+    print(f"╚══════════════════════════════════════════════╝")
+    return None
+
+def crack_hybrid(file_path, length, chars, num_threads=4):
+    """Hybrid approach - only use if GPU is available"""
+    print(f"\n╔══════════════════════════════════════════════╗")
+    print(f"║  🔄 𝖧𝖸𝖡𝖱𝖨𝖣 𝖠𝖳𝖳𝖠𝖢𝖪 ({num_threads} 𝗍𝗁𝗋𝖾𝖺𝖽𝗌){' ':<18}║")
+    print(f"╚══════════════════════════════════════════════╝")
+    
+    cracker = RTX3050Cracker()
+    
+    # If no GPU, fallback to CPU
+    if not cracker.has_cuda:
+        print("  ❌ 𝖭𝗈 𝖦𝖯𝖴 𝖺𝗏𝖺𝗂𝗅𝖺𝖻𝗅𝖾, 𝗎𝗌𝗂𝗇𝗀 𝖢𝖯𝖴 𝗈𝗇𝗅𝗒")
+        return crack_cpu_only(file_path, length, chars)
+    
+    start_time = time.time()
+    total_combinations = len(chars) ** length
+    found_password = None
+    attempts_counter = 0
+    last_update = start_time
+    
+    def test_password_batch(password_batch):
+        nonlocal found_password
+        with pyzipper.AESZipFile(file_path) as archive:
+            test_file = archive.namelist()[0]
+            for pwd in password_batch:
+                if found_password:
+                    return
+                try:
+                    archive.read(test_file, pwd=pwd.encode())
+                    found_password = pwd
+                    return
+                except:
+                    pass
+        return len(password_batch)
+    
+    # Use ThreadPool for parallel testing
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        futures = []
+        batch_size = 25000  # Smaller batches for threading
+        
+        for batch_start in range(0, total_combinations, batch_size):
+            if found_password:
+                break
+                
+            current_batch_size = min(batch_size, total_combinations - batch_start)
+            
+            # Generate passwords on GPU
+            passwords = cracker.generate_passwords_gpu(chars, length, batch_start, current_batch_size)
+            
+            # Submit for testing
+            future = executor.submit(test_password_batch, passwords)
+            futures.append(future)
+            
+            # Check completed futures
+            for f in futures:
+                if f.done():
+                    try:
+                        result = f.result()
+                        if isinstance(result, int):
+                            attempts_counter += result
+                        elif result:  # Found password
+                            found_password = result
+                            break
+                    except:
+                        pass
+            
+            # Progress reporting
+            current_time = time.time()
+            if current_time - last_update >= 1.0:
+                elapsed = current_time - start_time
+                speed = attempts_counter / elapsed if elapsed > 0 else 0
+                progress = (batch_start + current_batch_size) / total_combinations * 100
+                progress_bar = '█' * int(progress / 4) + '░' * (25 - int(progress / 4))
+                print(f"  🔄 [{progress_bar}] {progress:.1f}% | {attempts_counter:,} | {speed:.0f}/𝗌", end='\r')
+                last_update = current_time
+    
+    elapsed = time.time() - start_time
+    
+    if found_password:
+        print(f"\n╔══════════════════════════════════════════════╗")
+        print(f"║  ✅ 𝖲𝖴𝖢𝖢𝖤𝖲𝖲!{' ':<32}║")
+        print(f"╠══════════════════════════════════════════════╣")
+        print(f"║  🔑 𝖯𝖺𝗌𝗌𝗐𝗈𝗋𝖽: {found_password}{' ':<23}║")
+        print(f"║  🔢 𝖠𝗍𝗍𝖾𝗆𝗉𝗍𝗌: {attempts_counter:,}{' ':<22}║")
+        print(f"║  ⏱️ 𝖳𝗂𝗆𝖾: {elapsed:.2f}𝗌{' ':<29}║")
+        print(f"║  ⚡ 𝖲𝗉𝖾𝖾𝖽: {attempts_counter/elapsed:.0f} 𝗉𝗐𝖽/𝗌𝖾𝖼{' ':<24}║")
+        print(f"╚══════════════════════════════════════════════╝")
+        return found_password
+    else:
+        print(f"\n╔══════════════════════════════════════════════╗")
+        print(f"║  ❌ 𝖥𝖠𝖨𝖫𝖤𝖣{' ':<47}║")
+        print(f"╠══════════════════════════════════════════════╣")
+        print(f"║  🔢 𝖠𝗍𝗍𝖾𝗆𝗉𝗍𝗌: {attempts_counter:,}{' ':<28}║")
+        print(f"║  ⏱️ 𝖳𝗂𝗆𝖾: {elapsed:.2f}𝗌{' ':<38}║")
+        print(f"║  ⚡ 𝖲𝗉𝖾𝖾𝖽: {attempts_counter/elapsed:.0f} 𝗉𝗐𝖽/𝗌𝖾𝖼{' ':<22}║")
+        print(f"╚══════════════════════════════════════════════╝")
+        return None
+
+def main():
+    """Main function with proper GPU detection"""
+    try:
+        # 𝖯𝖠𝖡𝖠𝖲𝖠𝖱𝖠'𝖲 𝖲𝖯𝖫𝖠𝖲𝖧 𝖲𝖢𝖱𝖤𝖤𝖭
+        print(f"\n{'='*60}")
+        print(f"╔{'═'*58}╗")
+        print(f"║{' ' * 58}║")
+        print(f"║    🚀 𝖯𝖠𝖡𝖠𝖲𝖠𝖱𝖠'𝖲 𝖴𝖫𝖳𝖨𝖬𝖠𝖳𝖤 𝖦𝖯𝖴 𝖹𝖨𝖯 𝖢𝖱𝖠𝖢𝖪𝖤𝖱 v𝟣.𝟢           ║")
+        print(f"║         𝖯𝗈𝗐𝖾𝗋𝖾𝖽 𝖻𝗒 𝖱𝖳𝖷  & 𝖯𝗒𝖳𝗈𝗋𝖼𝗁 𝖢𝖴𝖣𝖠                   ║")
+        print(f"║{' ' * 58}║")
+        print(f"╚{'═'*58}╝")
+        print(f"{'='*60}\n")
+        
+        # Check GPU first
+        has_gpu = torch.cuda.is_available()
+        print(f"╔══════════════════════════════════════════════╗")
+        print(f"║  🔧 𝖲𝖸𝖲𝖳𝖤𝖬 𝖢𝖧𝖤𝖢𝖪{' ':<29}║")
+        print(f"╠══════════════════════════════════════════════╣")
+        print(f"║  • 𝖦𝖯𝖴 𝖠𝗏𝖺𝗂𝗅𝖺𝖻𝗅𝖾: {'𝖸𝖾𝗌' if has_gpu else '𝖭𝗈'}{' ':<25}║")
+        if has_gpu:
+            print(f"║  • 𝖦𝖯𝖴: {torch.cuda.get_device_name(0)}{' ':<22}║")
+        print(f"╚══════════════════════════════════════════════╝")
+        
+        file_path, length, chars = get_cracking_params()
+        if not file_path:
+            return
+        
+        print(f"\n╔══════════════════════════════════════════════╗")
+        print(f"║  ⚙️ 𝖢𝖮𝖭𝖥𝖨𝖦𝖴𝖱𝖠𝖳𝖨𝖮𝖭{' ':<28}║")
+        print(f"╠══════════════════════════════════════════════╣")
+        print(f"║  • 𝖢𝗁𝖺𝗋𝖺𝖼𝗍𝖾𝗋𝗌: {len(chars)} {' ':<27}║")
+        print(f"║  • 𝖫𝖾𝗇𝗀𝗍𝗁: {length}{' ':<33}║")
+        print(f"║  • 𝖳𝗈𝗍𝖺𝗅: {len(chars)**length:,}{' ':<28}║")
+        print(f"║  • 𝖦𝖯𝖴: {'𝖸𝖾𝗌' if has_gpu else '𝖭𝗈'}{' ':<35}║")
+        print(f"╚══════════════════════════════════════════════╝")
+        
+        calculate_stats(chars, length)
+        
+        print(f"\n╔══════════════════════════════════════════════╗")
+        print(f"║  🎯 𝖠𝖳𝖳𝖠𝖢𝖪 𝖬𝖤𝖳𝖧𝖮𝖣{' ':<28}║")
+        print(f"╠══════════════════════════════════════════════╣")
+        print(f"║  𝟣. 𝖢𝖯𝖴 𝖮𝗇𝗅𝗒 (𝖬𝗈𝗌𝗍 𝖢𝗈𝗆𝗉𝖺𝗍𝗂𝖻𝗅𝖾)               ║")
+        if has_gpu:
+            print(f"║  𝟤. 𝖦𝖯𝖴 𝖮𝗇𝗅𝗒 (𝖥𝖺𝗌𝗍𝖾𝗌𝗍)                        ║")
+            print(f"║  𝟥. 𝖧𝗒𝖻𝗋𝗂𝖽 (𝖦𝖯𝖴 + 𝖢𝖯𝖴 𝖳𝗁𝗋𝖾𝖺𝖽𝗌)                ║")
+        else:
+            print(f"║  𝟤. 𝖦𝖯𝖴 𝖮𝗇𝗅𝗒 (𝖭𝗈𝗍 𝖠𝗏𝖺𝗂𝗅𝖺𝖻𝗅𝖾)                 ║")
+            print(f"║  𝟥. 𝖧𝗒𝖻𝗋𝗂𝖽 (𝖭𝗈𝗍 𝖠𝗏𝖺𝗂𝗅𝖺𝖻𝗅𝖾)                   ║")
+        print(f"╚══════════════════════════════════════════════╝")
+        
+        while True:
+            method = input("\n  🎯 𝖢𝗁𝗈𝗈𝗌𝖾 𝖺𝗍𝗍𝖺𝖼𝗄 𝗆𝖾𝗍𝗁𝗈𝖽 (𝟣-𝟥): ").strip()
+            if method in ['1']:
+                break
+            if has_gpu and method in ['2','3']:
+                break
+            print("  ❌ 𝖨𝗇𝗏𝖺𝗅𝗂𝖽 𝖼𝗁𝗈𝗂𝖼𝖾")
+        
+        print(f"\n{'='*60}")
+        print(f"  🚀 𝖲𝖳𝖠𝖱𝖳𝖨𝖭𝖦 𝖠𝖳𝖳𝖠𝖢𝖪... (𝖯𝗋𝖾𝗌𝗌 𝖢𝗍𝗋𝗅+𝖢 𝗍𝗈 𝗌𝗍𝗈𝗉)")
+        print(f"{'='*60}\n")
+        
+        if method == "1":
+            password = crack_cpu_only(file_path, length, chars)
+        elif method == "2":
+            password = crack_gpu_only(file_path, length, chars)
+        elif method == "3":
+            password = crack_hybrid(file_path, length, chars)
+        
+        if password:
+            print(f"\n{'='*60}")
+            print(f"  🎉 𝖢𝖮𝖭𝖦𝖱𝖠𝖳𝖴𝖫𝖠𝖳𝖨𝖮𝖭𝖲, 𝖯𝖠𝖲𝖲𝖶𝖮𝖱𝖣 𝖥𝖮𝖴𝖭𝖣! 🎉")
+            print(f"{'='*60}")
+        else:
+            print(f"\n{'='*60}")
+            print(f"  🔒 𝖲𝖮𝖱𝖱𝖸, 𝖯𝖠𝖲𝖲𝖶𝖮𝖱𝖣 𝖭𝖮𝖳 𝖥𝖮𝖴𝖭𝖣 🔒")
+            print(f"{'='*60}")
+            
+    except KeyboardInterrupt:
+        print(f"\n{'='*60}")
+        print(f"  ⏹️ 𝖠𝖳𝖳𝖠𝖢𝖪 𝖲𝖳𝖮𝖯𝖯𝖤𝖣 𝖡𝖸 𝖴𝖲𝖤𝖱")
+        print(f"{'='*60}")
+    except Exception as e:
+        print(f"\n{'='*60}")
+        print(f"  ❌ 𝖤𝖱𝖱𝖮𝖱: {e}")
+        print(f"{'='*60}")
+    finally:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        print(f"\n{'='*60}")
+        print(f"  👋 𝖳𝖧𝖠𝖭𝖪 𝖸𝖮𝖴 𝖥𝖮𝖱 𝖴𝖲𝖨𝖭𝖦 𝖯𝖠𝖡𝖠𝖲𝖠𝖱𝖠'𝖲 𝖢𝖱𝖠𝖢𝖪𝖤𝖱! 👋")
+        print(f"{'='*60}")
+        input("\n  𝖯𝗋𝖾𝗌𝗌 𝖤𝗇𝗍𝖾𝗋 𝗍𝗈 𝖾𝗑𝗂𝗍... ")
+
+if __name__ == "__main__":
+    main()
