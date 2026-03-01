@@ -184,9 +184,9 @@ The developer is not responsible for misuse.
 
 ## 👨‍💻 Author
 
-**Pabasara Lakmal**
 
->  🚀
+
+>  **Pabasara Lakmal** 🚀
 
 ------------------------------------------------------------------------
 
