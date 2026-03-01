@@ -45,13 +45,14 @@ git clone https://github.com/Pabasaralakmal2/Zip-Password-Cracker.git
 cd Zip-Password-Cracker
 ```
 
-### 2️⃣ Install Dependencies (optional)
+### 2️⃣ Install Dependencies 
 
 ``` bash
 pip install torch pyzipper numpy
+
 ```
 
-If using GPU acceleration, install PyTorch with CUDA support from:
+install only If using GPU acceleration, install PyTorch with CUDA support from:
 
 👉 https://pytorch.org/get-started/locally/
 
