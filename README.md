@@ -41,11 +41,11 @@
 ### 1️⃣ Clone the Repository
 
 ``` bash
-git clone https://github.com/yourusername/ultimate-gpu-zip-cracker.git
-cd ultimate-gpu-zip-cracker
+git clone https://github.com/Pabasaralakmal2/Zip-Password-Cracker.git
+cd Zip-Password-Cracker
 ```
 
-### 2️⃣ Install Dependencies
+### 2️⃣ Install Dependencies (optional)
 
 ``` bash
 pip install torch pyzipper numpy
@@ -183,8 +183,7 @@ The developer is not responsible for misuse.
 
 **Pabasara Lakmal**
 
-> Bachelor of ICT\
-> Future Software Engineer 🚀
+>  🚀
 
 ------------------------------------------------------------------------
 
